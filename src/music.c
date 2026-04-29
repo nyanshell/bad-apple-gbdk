@@ -10,6 +10,11 @@
    table at MUSIC_DATA_BANK. music_tick advances one tick (= one VBlank)
    and fires every event whose frame <= cursor. */
 
+/* MBC5 16-bit bank tracker, used by SWITCH_BANK_16 in banks.h. Lives
+   here because music.c is the smallest always-linked C file that needs
+   bank switching; previously this was in src/audio.c which is gone. */
+volatile uint16_t current_bank_16 = 1;
+
 volatile uint16_t music_cur_frame;
 volatile uint8_t  music_paused;
 static uint16_t cur_event;

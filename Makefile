@@ -37,10 +37,10 @@ all: codegen
 # Step 1: Run Python encoders if their inputs changed.
 codegen: $(GEN_DIR)/.stamp
 
-$(GEN_DIR)/.stamp: tools/encode_video.py tools/encode_audio.py \
-                   resources/raw_audio.wav | $(GEN_DIR)
+$(GEN_DIR)/.stamp: tools/encode_video.py tools/encode_music.py \
+                   "resources/Alstroemeria Records - Bad Apple.mid" | $(GEN_DIR)
 	$(PYTHON) tools/encode_video.py
-	$(PYTHON) tools/encode_audio.py
+	$(PYTHON) tools/encode_music.py
 	@touch $@
 
 $(GEN_DIR) $(OBJ_DIR):

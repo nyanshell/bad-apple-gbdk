@@ -5,7 +5,6 @@
 #include <stdint.h>
 
 #include "video_data.h"
-#include "audio_data.h"
 
 #define MAP_W 20
 #define MAP_H 18
@@ -32,19 +31,17 @@ extern volatile uint16_t current_bank_16;
     rROMB0 = (uint8_t)(_bk); \
 } while (0)
 
-void audio_init(void);
-void audio_isr(void);
 void video_init(void);
 void render_frame(uint16_t frame_no);
 void music_init(void);
 void music_tick(void);
 extern volatile uint16_t music_cur_frame;
+extern volatile uint8_t  music_paused;
 
-/* Counts cached into RAM at init time so the main loop and ISRs don't have
-   to bank-switch to read them. The originals live in banked .c files
-   (frame_index.c bank 3, audio_index.c bank 4) and are not safe to read
-   when those banks aren't currently mapped. */
+/* Counts cached into RAM at init time so the main loop doesn't have to
+   bank-switch to read them. cached_total_frames lives in WRAM, the
+   original total_frames in frame_index.c (bank 3) is only addressable
+   when bank 3 is currently mapped. */
 extern uint16_t cached_total_frames;
-extern uint16_t cached_num_audio_chunks;
 
 #endif
