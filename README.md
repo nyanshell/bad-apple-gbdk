@@ -10,6 +10,11 @@ silhouette plays without tearing on real hardware. The chiptune driver
 maps four selected MIDI tracks onto the GB's pulse / wave / noise
 channels.
 
+## Material
+
+- Video: https://www.youtube.com/watch?v=FtutLA63Cp8
+- MIDI: https://www.youtube.com/watch?v=ANRzDT1pU8c
+
 ## Layout
 
 ```
