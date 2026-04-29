@@ -15,6 +15,15 @@ channels.
 - Video: https://www.youtube.com/watch?v=FtutLA63Cp8
 - MIDI: https://www.youtube.com/watch?v=ANRzDT1pU8c
 
+## References
+
+Other Bad Apple GB ROMs and GBDK demos studied while building this:
+
+- [Dwscdv3/BadBoy](https://github.com/Dwscdv3/BadBoy)
+- [shysaur/dmg-badapple-av](https://github.com/shysaur/dmg-badapple-av)
+- [LaroldsJubilantJunkyard/playing-sounds-in-gbdk](https://github.com/LaroldsJubilantJunkyard/playing-sounds-in-gbdk)
+- [gbdk-2020/gbdk-2020](https://github.com/gbdk-2020/gbdk-2020)
+
 ## Layout
 
 ```
