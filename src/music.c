@@ -11,11 +11,13 @@
    and fires every event whose frame <= cursor. */
 
 volatile uint16_t music_cur_frame;
+volatile uint8_t  music_paused;
 static uint16_t cur_event;
 
 void music_init(void) {
     music_cur_frame = 0;
-    cur_event = 0;
+    music_paused    = 0;
+    cur_event       = 0;
 
     NR52_REG = 0x80;        /* APU on. */
     NR50_REG = 0x77;        /* Master volume max on both speakers. */
@@ -51,12 +53,18 @@ static inline void trigger_pulse2(uint8_t freq_lo, uint8_t freq_hi) {
 }
 
 static inline void trigger_noise(void) {
-    /* Kick-drum style: high initial volume, fast decrease envelope,
-       low-frequency polynomial. Decays in ~0.1 s. */
-    NR41_REG = 0x00;            /* Length counter cleared. */
-    NR42_REG = 0xF1;            /* Vol 15, env decrease, period 1. */
-    NR43_REG = 0x55;            /* Polynomial: shift 5, 15-bit, divisor 5. */
-    NR44_REG = 0x80;            /* Trigger. */
+    /* Punchy 8-bit kick: low polynomial frequency in 7-bit "periodic"
+       width-mode (NR43 bit 3 = 1) — gives the noise channel a tonal,
+       tom-tom character rather than the hissy white-noise it produces
+       in 15-bit mode. Combined with a fast vol 15 → 0 envelope, each
+       hit reads as a punchy thump rather than a sustained rumble.
+       NR42=0xF1: vol 15, decrease, pace 1 → ~230 ms.
+       NR43=0x6F: shift 6 + 7-bit width + divisor 7 → ~585 Hz, periodic
+                  → kick / low tom timbre. */
+    NR41_REG = 0x00;
+    NR42_REG = 0xF1;            /* Vol 15, decrease, pace 1 (~230 ms). */
+    NR43_REG = 0x6F;            /* Low-pitch periodic noise — tom-like. */
+    NR44_REG = 0x80;            /* Trigger, length disabled. */
 }
 
 static inline void trigger_wave(uint8_t freq_lo, uint8_t freq_hi) {
@@ -67,6 +75,7 @@ static inline void trigger_wave(uint8_t freq_lo, uint8_t freq_hi) {
 }
 
 void music_tick(void) {
+    if (music_paused) return;               /* A-button pause halts time. */
     uint16_t f = music_cur_frame++;
 
     /* Music events live in MUSIC_DATA_BANK. Save/restore the caller's

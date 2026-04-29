@@ -36,10 +36,14 @@ ENVELOPE_OFF      = 0x00                   # DAC off → silence
 # Bad Apple (14 tracks, 215s). Track 6 has the high-register melody;
 # track 3 is the bass line. Other tracks (drums on ch 9, harmonies, etc.)
 # are dropped — GB only has 2 pulse channels and we're keeping it simple.
-MELODY_TRACK   = 6                         # Pulse 1
-BASS_TRACK     = 3                         # Pulse 2
-DRUM_TRACK     = 1                         # Noise (Ch 4) — kick
-HARMONY_TRACK  = 8                         # Wave  (Ch 3) — mid-register harmony
+# Tracks → channel mapping. Each channel may receive events from
+# multiple MIDI tracks; we concatenate them so a track ending mid-song
+# can be followed by another track on the same channel (e.g. T6 melody
+# 32-208s + T9 outro melody 208-239s on Pulse 1).
+MELODY_TRACKS   = [6, 9]                   # Pulse 1: main + outro melody
+BASS_TRACKS     = [3, 10, 11]              # Pulse 2: main bass + outro bass voices
+DRUM_TRACKS     = [1, 4]                   # Noise:   kick + extended drums
+HARMONY_TRACKS  = [8]                      # Wave:    mid-register harmony
 
 # Music event table is banked. Bank 4 already holds the audio_index
 # (~700 B from PCM days); plenty of room for the ~12 KB packed music
@@ -62,21 +66,53 @@ def midi_to_gb_freq(note: int, base: int = 131072) -> int:
         note += 12
 
 
+def build_tempo_map(mid: mido.MidiFile) -> list:
+    """Build a global (cumulative_ticks, tempo_us_per_beat) list by
+    walking ALL tracks and collecting set_tempo events in tick order.
+    For type-1 MIDIs, tempo changes are typically in track 0 but apply
+    globally — extracting per-track means later tracks miss them and
+    drift behind. This restores the correct global timeline."""
+    changes = []
+    for track in mid.tracks:
+        abs_ticks = 0
+        for msg in track:
+            abs_ticks += msg.time
+            if msg.type == "set_tempo":
+                changes.append((abs_ticks, msg.tempo))
+    changes.sort(key=lambda x: x[0])
+    if not changes or changes[0][0] != 0:
+        changes.insert(0, (0, 500000))   # default 120 BPM until first set_tempo
+    return changes
+
+
+def ticks_to_seconds(target_ticks: int, tempo_map: list, tpb: int) -> float:
+    """Convert absolute MIDI ticks to seconds using the global tempo map."""
+    seconds = 0.0
+    last_tick, last_tempo = tempo_map[0]
+    for tick, tempo in tempo_map[1:]:
+        if tick >= target_ticks:
+            break
+        seconds += (tick - last_tick) / tpb * (last_tempo / 1_000_000)
+        last_tick, last_tempo = tick, tempo
+    seconds += (target_ticks - last_tick) / tpb * (last_tempo / 1_000_000)
+    return seconds
+
+
 def extract_events(mid: mido.MidiFile, track_idx: int, channel: int,
-                   freq_base: int = 131072) -> list:
-    """Pulse/Wave channel extraction. monophonic, last-note-wins. Pass
-    freq_base=65536 for the Wave channel."""
+                   tempo_map: list, freq_base: int = 131072) -> list:
+    """Pulse/Wave channel extraction. monophonic, last-note-wins. Uses
+    the global tempo_map so tracks stay synced even when tempo changes
+    only appear in track 0."""
     events = []
-    abs_time = 0.0
-    tempo = 500000
+    abs_ticks = 0
     tpb = mid.ticks_per_beat
     active_note = None
 
     for msg in mid.tracks[track_idx]:
-        abs_time += mido.tick2second(msg.time, tpb, tempo)
+        abs_ticks += msg.time
         if msg.type == "set_tempo":
-            tempo = msg.tempo
-            continue
+            continue                       # already in tempo_map
+        abs_time = ticks_to_seconds(abs_ticks, tempo_map, tpb)
         frame = int(round(abs_time * GB_FRAMES_PER_SEC))
         if msg.type == "note_on" and msg.velocity > 0:
             reg = midi_to_gb_freq(msg.note, base=freq_base)
@@ -91,22 +127,20 @@ def extract_events(mid: mido.MidiFile, track_idx: int, channel: int,
     return events
 
 
-def extract_drum_events(mid: mido.MidiFile, track_idx: int, channel: int) -> list:
+def extract_drum_events(mid: mido.MidiFile, track_idx: int, channel: int,
+                        tempo_map: list) -> list:
     """Noise-channel extraction. Drums get only trigger events — the
-    noise channel's envelope handles its own decay, so we don't need a
-    silence event for each. freq_lo / freq_hi are unused for drums; the
-    runtime player picks fixed NR43 / NR42 values."""
+    noise channel's envelope handles its own decay."""
     events = []
-    abs_time = 0.0
-    tempo = 500000
+    abs_ticks = 0
     tpb = mid.ticks_per_beat
     for msg in mid.tracks[track_idx]:
-        abs_time += mido.tick2second(msg.time, tpb, tempo)
+        abs_ticks += msg.time
         if msg.type == "set_tempo":
-            tempo = msg.tempo
             continue
-        frame = int(round(abs_time * GB_FRAMES_PER_SEC))
         if msg.type == "note_on" and msg.velocity > 0:
+            abs_time = ticks_to_seconds(abs_ticks, tempo_map, tpb)
+            frame = int(round(abs_time * GB_FRAMES_PER_SEC))
             events.append((frame, channel, 0, 0, ENVELOPE_ON))
     return events
 
@@ -151,14 +185,22 @@ def encode(midi_path: Path, out_path: Path) -> None:
     print(f"midi: type={mid.type} length={mid.length:.1f}s tpb={mid.ticks_per_beat}")
     print(f"tracks: {len(mid.tracks)}")
 
-    melody  = extract_events(mid,      MELODY_TRACK,  channel=0)                    # Pulse 1
-    bass    = extract_events(mid,      BASS_TRACK,    channel=1)                    # Pulse 2
-    drums   = extract_drum_events(mid, DRUM_TRACK,    channel=2)                    # Noise
-    harmony = extract_events(mid,      HARMONY_TRACK, channel=3, freq_base=65536)   # Wave
-    print(f"track {MELODY_TRACK} (melody  → Pulse 1): {len(melody)} events")
-    print(f"track {BASS_TRACK} (bass    → Pulse 2): {len(bass)} events")
-    print(f"track {DRUM_TRACK} (drums   → Noise  ): {len(drums)} events")
-    print(f"track {HARMONY_TRACK} (harmony → Wave   ): {len(harmony)} events")
+    tempo_map = build_tempo_map(mid)
+    print(f"global tempo map: {len(tempo_map)} entries")
+
+    melody, bass, drums, harmony = [], [], [], []
+    for ti in MELODY_TRACKS:
+        melody  += extract_events(mid, ti, channel=0, tempo_map=tempo_map)
+    for ti in BASS_TRACKS:
+        bass    += extract_events(mid, ti, channel=1, tempo_map=tempo_map)
+    for ti in DRUM_TRACKS:
+        drums   += extract_drum_events(mid, ti, channel=2, tempo_map=tempo_map)
+    for ti in HARMONY_TRACKS:
+        harmony += extract_events(mid, ti, channel=3, tempo_map=tempo_map, freq_base=65536)
+    print(f"tracks {MELODY_TRACKS}  → Pulse 1: {len(melody)} events")
+    print(f"tracks {BASS_TRACKS}    → Pulse 2: {len(bass)} events")
+    print(f"tracks {DRUM_TRACKS}    → Noise  : {len(drums)} events")
+    print(f"tracks {HARMONY_TRACKS} → Wave   : {len(harmony)} events")
 
     # Silence channels with sustained notes (pulse + wave) at the end.
     # Noise decays via its envelope, no explicit silence needed.
