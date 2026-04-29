@@ -1,0 +1,15 @@
+obj/
+gen/
+*.gb
+*.map
+*.sym
+*.ihx
+*.lst
+*.rel
+*.cdb
+*.lnk
+*.asm
+*.o
+.venv/
+__pycache__/
+*.pyc
