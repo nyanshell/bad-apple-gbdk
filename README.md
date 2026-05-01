@@ -1,5 +1,9 @@
 # Bad Apple!! Game Boy ROM
 
+<p align="center">
+  <img src="resources/gbc.png" alt="Bad Apple ROM running on a Game Boy Color" width="480">
+</p>
+
 A Game Boy (DMG / GBC compatible) ROM that plays the Bad Apple!! music
 video at 160×144 with synchronized 4-channel chiptune audio. Built on
 GBDK-2020, packed into a 8 MB MBC5 cartridge image.
